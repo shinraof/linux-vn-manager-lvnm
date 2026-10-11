@@ -52,6 +52,36 @@ jobs:
             echo "IS_PRERELEASE=true" >> "$GITHUB_ENV"
           fi
 
+      - name: Check existing tagged release
+        id: existing_release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          status=$(curl --silent --show-error --location --output /dev/null --write-out '%{http_code}' \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$TAG_NAME")
+          case "$status" in
+            200) echo "exists=true" >> "$GITHUB_OUTPUT" ;;
+            404) echo "exists=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "Failed to check release for $TAG_NAME (HTTP $status)" >&2; exit 1 ;;
+          esac
+
+      - name: Prepare release notes
+        if: github.ref_type != 'tag' || steps.existing_release.outputs.exists == 'false'
+        run: |
+          if [ "${{ github.ref_type }}" == "tag" ]; then
+            awk -v heading="## [$TAG_NAME]" '
+              index($0, heading) == 1 { found = 1; next }
+              found && /^## / { exit }
+              found { print }
+              END { if (!found) exit 1 }
+            ' CHANGELOG.md > release-notes.md
+          else
+            printf 'Automated build for commit: %s\nDownload the AppImage, Flatpak bundle, or portable Windows zip below.\n' "$GITHUB_SHA" > release-notes.md
+          fi
+
       - name: Move Continuous Tag
         if: github.ref == 'refs/heads/main'
         run: |
@@ -61,13 +91,12 @@ jobs:
           git push -f origin continuous
 
       - name: Publish Release
+        if: github.ref_type != 'tag' || steps.existing_release.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG_NAME }}
           name: ${{ env.RELEASE_NAME }}
-          body: |
-            Automated build for commit: ${{ github.sha }}
-            Download the AppImage, Flatpak bundle, or portable Windows zip below.
+          body_path: release-notes.md
           files: |
             LVNM-x86_64.AppImage
             LVNM-x86_64.flatpak

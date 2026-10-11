@@ -37,7 +37,7 @@ Both releases use the same user saved settings, games, prefixes, etc stored by d
 ### AppImage 
 It only bundles umu and winetricks internally. Everything else is from native system installed libraries.
 
-### Flatpak prototype
+### Flatpak
 Download the .flatpak from: https://github.com/uunniiblog/linux-vn-manager-lvnm/releases
 
 Install with `flatpak install --user LVNM-x86_64.flatpak`
