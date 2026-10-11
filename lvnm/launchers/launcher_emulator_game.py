@@ -203,15 +203,19 @@ class LauncherEmulatorGame(LauncherBaseGame):
             return
 
         host_xdg_paths = {
-            "XDG_CONFIG_HOME": ("HOST_XDG_CONFIG_HOME", ".config"),
-            "XDG_DATA_HOME": ("HOST_XDG_DATA_HOME", ".local/share"),
-            "XDG_CACHE_HOME": ("HOST_XDG_CACHE_HOME", ".cache"),
-            "XDG_STATE_HOME": ("HOST_XDG_STATE_HOME", ".local/state"),
+            "XDG_CONFIG_HOME": "HOST_XDG_CONFIG_HOME",
+            "XDG_DATA_HOME": "HOST_XDG_DATA_HOME",
+            "XDG_CACHE_HOME": "HOST_XDG_CACHE_HOME",
+            "XDG_STATE_HOME": "HOST_XDG_STATE_HOME",
         }
-        for xdg_variable, (host_variable, default_path) in host_xdg_paths.items():
-            self.env[xdg_variable] = self.env.get(host_variable) or str(Path(home) / default_path)
+        for xdg_variable, host_variable in host_xdg_paths.items():
+            host_path = self.env.get(host_variable)
+            if host_path:
+                self.env[xdg_variable] = host_path
+            else:
+                self.env.pop(xdg_variable, None)
 
-        logger.info("Using host XDG directories for emulator configuration and data")
+        logger.info("Using host XDG environment for emulator configuration and data")
 
     def _enable_flatpak_appimage_fallback(self, emulator_path: str):
         """Run AppImage emulators without FUSE when LVNM is sandboxed."""
