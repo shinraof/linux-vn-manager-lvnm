@@ -46,6 +46,12 @@ It bundles umu, winetricks, GStreamer libraries and linux-rt-upscaler and Japane
 
 If you want gamescope at desktop level you will need to install gamescope flatpak `flatpak install --user flathub org.freedesktop.Platform.VulkanLayer.gamescope`
 
+### Windows
+Unzip `LVNM-Windows-x86_64.zip` and run `LVNM.exe`.
+
+Supports: Timetracking, Gdrive save syncing and emulation.
+It's very barebones and lacks any specific Windows features, but should be handy if you play VNs between Windows and a Steam Deck (or any linux system) and want to sync your savedata seamlessly between systems.
+
 ## How to use
 1. Runner tab -> Download wine and proton runners.
 2. Prefix tab -> Create a prefix with the downloaded runner.
