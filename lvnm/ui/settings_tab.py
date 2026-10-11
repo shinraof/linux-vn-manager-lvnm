@@ -19,18 +19,23 @@ import logging
 from settings_manager import SettingsManager
 from game_manager import GameManager
 from logging_manager import setup_logging
+from pc98_manager import Pc98Manager
 from prefix_manager import PrefixManager
 from game_process_manager import GameProcessManager
 from gdrive_manager import GdriveManager, GdriveDeviceFlowWorker
+from platform_profile import CURRENT_PLATFORM, IS_WINDOWS, Feature, PlatformProfile
+from ui.platform_ui import PlatformUi
 
 logger = logging.getLogger(__name__)
 
 class SettingsTab(QWidget):
     CONFIG_FILE = config.USER_SETTINGS
 
-    def __init__(self, theme_manager):
+    def __init__(self, theme_manager, platform: PlatformProfile = CURRENT_PLATFORM):
         super().__init__()
 
+        self.platform = platform
+        self.platform_ui = PlatformUi(platform)
         self.theme_manager = theme_manager
         self.user_settings = SettingsManager()
         self.global_env_checkboxes = {}
@@ -50,8 +55,10 @@ class SettingsTab(QWidget):
         main_layout.addWidget(self._build_appearance_group())
         main_layout.addWidget(self._build_timetracking_group())
         main_layout.addWidget(self._build_savedata_group())
-        main_layout.addWidget(self._build_texthooking_group())
-        main_layout.addWidget(self._build_emulation_group())
+        self.texthooking_group = self._build_texthooking_group()
+        self.platform_ui.add_widget(main_layout, self.texthooking_group, requires=Feature.WINE_CONFIGURATION)
+        self.emulation_group = self._build_emulation_group()
+        self.platform_ui.add_widget(main_layout, self.emulation_group, requires=Feature.EMULATION)
         main_layout.addWidget(self._build_directories_group())
         main_layout.addWidget(self._build_sysinfo_group())
         main_layout.addWidget(self._build_about_group())
@@ -78,7 +85,7 @@ class SettingsTab(QWidget):
         self.font_btn = QPushButton(self.tr("Browse..."))
         font_layout.addWidget(self.font_edit)
         font_layout.addWidget(self.font_btn)
-        settings_layout.addRow(QLabel(self.tr("Font Folder:")), font_layout)
+        self.platform_ui.add_row(settings_layout, QLabel(self.tr("Font Folder:")), font_layout, requires=Feature.WINE_CONFIGURATION)
         
         # Gamescope
         gs_layout = QHBoxLayout()
@@ -91,7 +98,7 @@ class SettingsTab(QWidget):
             self.gs_params.setDisabled(True)
         gs_layout.addWidget(self.gs_checkbox)
         gs_layout.addWidget(self.gs_params)
-        settings_layout.addRow(QLabel(self.tr("Gamescope:")), gs_layout)
+        self.platform_ui.add_row(settings_layout, QLabel(self.tr("Gamescope:")), gs_layout, requires=Feature.GAMESCOPE)
 
         # linux-rt-upscaler
         upscaler_layout = QHBoxLayout()
@@ -109,7 +116,7 @@ class SettingsTab(QWidget):
         upscaler_layout.addWidget(self.upscaler_checkbox)
         upscaler_layout.addWidget(self.upscaler_params)
         upscaler_layout.addWidget(self.upscaler_gui_btn)
-        settings_layout.addRow(QLabel(self.tr("linux-rt-upscaler:")), upscaler_layout)
+        self.platform_ui.add_row(settings_layout, QLabel(self.tr("linux-rt-upscaler:")), upscaler_layout, requires=Feature.RT_UPSCALER)
         
         # Global Env Variables
         env_label = QLabel(self.tr("Environment variables:"))
@@ -119,7 +126,7 @@ class SettingsTab(QWidget):
         env_btn_layout = QHBoxLayout()
         env_btn_layout.addWidget(self.manage_env_btn)
         env_btn_layout.addStretch()
-        settings_layout.addRow(env_label, env_btn_layout)
+        self.platform_ui.add_row(settings_layout, env_label, env_btn_layout, requires=Feature.WINE_CONFIGURATION)
 
         # Added SteamGridDB API Key Section
         sgdb_container = QHBoxLayout()
@@ -332,12 +339,19 @@ class SettingsTab(QWidget):
         timetracker_layout.setLabelAlignment(Qt.AlignLeft)
 
         tt_settings = self.user_settings.get(config.USER_CONF_TIMETRACKER, {})
+        self.tt_dependent_widgets = []
 
         # Warning Message
-        self.tt_warning_label = QLabel(self.tr("Native Wayland tracking is supported on KDE, Hyprland, and GNOME with the LVNM Shell extension. Other desktops use XWayland."))
-        self.tt_warning_label.setStyleSheet("color: #888; font-style: italic; margin-bottom: 5px;")
-        self.tt_warning_label.setWordWrap(True)
-        timetracker_layout.addRow(self.tt_warning_label)
+        if self.platform.name != "windows":
+            tracking_help = self.tr(
+                "Native Wayland tracking is supported on KDE, Hyprland, and GNOME "
+                "with the LVNM Shell extension. Other desktops use XWayland."
+            )
+            self.tt_warning_label = QLabel(tracking_help)
+            self.tt_warning_label.setStyleSheet("color: #888; font-style: italic; margin-bottom: 5px;")
+            self.tt_warning_label.setWordWrap(True)
+            timetracker_layout.addRow(self.tt_warning_label)
+            self.tt_dependent_widgets.append(self.tt_warning_label)
 
         if SystemUtils.is_gnome_desktop():
             self.gnome_extension_message = QLabel(self.tr(
@@ -365,7 +379,11 @@ class SettingsTab(QWidget):
         self.afk_timer_edit.setValidator(QIntValidator(0, 999))
         self.afk_timer_edit.setFixedWidth(60)
         self.afk_timer_edit.setText(str(tt_settings.get(config.USER_CONF_TIMETRACKER_AFK_TIMER, 0)))
-        self.afk_label_suffix = QLabel(self.tr("minutes (requires swayidle)"))
+        if self.platform.name == "windows":
+            afk_suffix = self.tr("minutes")
+        else:
+            afk_suffix = self.tr("minutes (requires swayidle)")
+        self.afk_label_suffix = QLabel(afk_suffix)
         afk_layout.addWidget(self.afk_timer_edit)
         afk_layout.addWidget(self.afk_label_suffix)
         afk_layout.addStretch()
@@ -399,8 +417,7 @@ class SettingsTab(QWidget):
         self.tt_sync_label = QLabel(self.tr("Gdrive sync"))
         timetracker_layout.addRow(self.tt_sync_label, self.timetracking_sync)
 
-        self.tt_dependent_widgets = [
-            self.tt_warning_label,
+        self.tt_dependent_widgets.extend([
             self.afk_timer_edit,
             self.afk_label_prefix,
             self.afk_label_suffix,
@@ -408,8 +425,8 @@ class SettingsTab(QWidget):
             self.save_label_prefix,
             self.save_label_suffix,
             self.timetracking_autostart,
-            self.autostart_label
-        ]
+            self.autostart_label,
+        ])
 
         # Connect the checkbox signal
         self.timetracking_enable.toggled.connect(self._on_timetracking_toggled)
@@ -546,7 +563,7 @@ class SettingsTab(QWidget):
     def _open_savedata_manager(self):
         """Opens the dialog to manage savedata."""
 
-        dialog = SavedataManagementDialog(self)
+        dialog = SavedataManagementDialog(self, platform=self.platform)
         if dialog.exec():
             log.debug("Save data closed")
 
@@ -607,36 +624,51 @@ class SettingsTab(QWidget):
         # Retrieve current settings
         emulation_settings = self.user_settings.get(config.USER_CONF_EMULATION, {})
 
+        linux_path_placeholders = [
+            self.tr("/path/to/duckstation.AppImage or duckstation-qt"),
+            self.tr("/path/to/pcsx2.AppImage or pcsx2-qt"),
+            self.tr("/path/to/rpcs3.AppImage or rpcs3"),
+            self.tr("/path/to/emulator.AppImage or process"),
+            self.tr("/path/to/emulator.AppImage or process"),
+        ]
+        windows_path_placeholders = [
+            self.tr("C:\\path\\to\\duckstation-qt.exe"),
+            self.tr("C:\\path\\to\\pcsx2-qt.exe"),
+            self.tr("C:\\path\\to\\rpcs3.exe"),
+            self.tr("C:\\path\\to\\emulator.exe"),
+            self.tr("C:\\path\\to\\emulator.exe"),
+        ]
+        path_placeholders = windows_path_placeholders if IS_WINDOWS else linux_path_placeholders
         emulator_definitions = [
             (
                 self.tr("PSX"),
                 config.USER_CONF_EMULATION_PSX_PATH,
                 config.USER_CONF_EMULATION_PSX_CONFIG,
-                self.tr("/path/to/duckstation.AppImage or duckstation-qt"),
+                path_placeholders[0],
             ),
             (
                 self.tr("PS2"),
                 config.USER_CONF_EMULATION_PS2_PATH,
                 config.USER_CONF_EMULATION_PS2_CONFIG,
-                self.tr("/path/to/pcsx2.AppImage or pcsx2-qt"),
+                path_placeholders[1],
             ),
             (
                 self.tr("PS3"),
                 config.USER_CONF_EMULATION_PS3_PATH,
                 config.USER_CONF_EMULATION_PS3_CONFIG,
-                self.tr("/path/to/rpcs3.AppImage or rpcs3"),
+                path_placeholders[2],
             ),
             (
                 self.tr("PSP"),
                 config.USER_CONF_EMULATION_PSP_PATH,
                 config.USER_CONF_EMULATION_PSP_CONFIG,
-                self.tr("/path/to/emulator.AppImage or process"),
+                path_placeholders[3],
             ),
             (
                 self.tr("Switch"),
                 config.USER_CONF_EMULATION_SWITCH_PATH,
                 config.USER_CONF_EMULATION_SWITCH_CONFIG,
-                self.tr("/path/to/emulator.AppImage or process"),
+                path_placeholders[4],
             ),
         ]
 
@@ -676,6 +708,72 @@ class SettingsTab(QWidget):
             self.emulation_widgets[path_key] = path_edit
             self.emulation_widgets[cli_key] = config_edit
 
+        emulation_layout.addRow(QLabel(f"<b>{self.tr('PC-98 (NP2kai)')}</b>"))
+        pc98_note = QLabel(self.tr(
+            "The flatpak build includes a small RetroArch frontend, NP2kai core, and a freely distributable japanese font. "
+            "For the better compatatibility include your own bios and font files in the configured folder below. Multi disk games can use an UTF-8 .m3u playlist. "
+            "Press F12 for NP2kai's menu. Press F1 for retroarch menu."
+        ))
+        pc98_note.setWordWrap(True)
+        pc98_note.setStyleSheet("color: #888; font-style: italic;")
+        emulation_layout.addRow(pc98_note)
+
+        is_flatpak = SystemUtils.get_runtime_type() == "flatpak"
+        use_bundled = QCheckBox(self.tr("Use the flatpak bundled RetroArch and NP2kai core"))
+        use_bundled.setChecked(is_flatpak and emulation_settings.get(config.USER_CONF_EMULATION_PC98_USE_BUNDLED, False))
+        use_bundled.setEnabled(is_flatpak)
+        emulation_layout.addRow(use_bundled)
+
+        pc98_path_row = QHBoxLayout()
+        pc98_path_edit = QLineEdit(emulation_settings.get(config.USER_CONF_EMULATION_PC98_PATH, ""))
+        pc98_path_edit.setPlaceholderText(self.tr("C:\\path\\to\\retroarch.exe") if IS_WINDOWS else self.tr("/path/to/retroarch or retroarch"))
+        pc98_path_btn = QPushButton(self.tr("Browse..."))
+        pc98_path_row.addWidget(pc98_path_edit)
+        pc98_path_row.addWidget(pc98_path_btn)
+        pc98_path_label = QLabel(self.tr("Custom RetroArch:"))
+        emulation_layout.addRow(pc98_path_label, pc98_path_row)
+
+        pc98_core_row = QHBoxLayout()
+        pc98_core_edit = QLineEdit(emulation_settings.get(config.USER_CONF_EMULATION_PC98_CORE_PATH, ""))
+        pc98_core_edit.setPlaceholderText(self.tr("C:\\path\\to\\np2kai_libretro.dll") if IS_WINDOWS else self.tr("/path/to/np2kai_libretro.so"))
+        pc98_core_btn = QPushButton(self.tr("Browse..."))
+        pc98_core_row.addWidget(pc98_core_edit)
+        pc98_core_row.addWidget(pc98_core_btn)
+        pc98_core_label = QLabel(self.tr("Custom NP2kai core:"))
+        emulation_layout.addRow(pc98_core_label, pc98_core_row)
+
+        default_system_path = Pc98Manager.get_managed_system_path_default()
+        pc98_system_row = QHBoxLayout()
+        pc98_system_path = QLineEdit(emulation_settings.get(config.USER_CONF_EMULATION_PC98_SYSTEM_PATH, default_system_path))
+        pc98_system_path.setPlaceholderText(self.tr("Select the folder containing NP2kai BIOS/font files"))
+        pc98_system_btn = QPushButton(self.tr("Browse..."))
+        pc98_system_row.addWidget(pc98_system_path)
+        pc98_system_row.addWidget(pc98_system_btn)
+        emulation_layout.addRow(QLabel(self.tr("BIOS/font system folder:")), pc98_system_row)
+
+        pc98_config_edit = QLineEdit(emulation_settings.get(config.USER_CONF_EMULATION_PC98_CONFIG, ""))
+        pc98_config_edit.setPlaceholderText(self.tr("Optional extra RetroArch arguments"))
+        emulation_layout.addRow(QLabel(self.tr("Extra arguments:")), pc98_config_edit)
+
+        def update_pc98_custom_state(checked):
+            for widget in (pc98_path_label, pc98_path_edit, pc98_path_btn, pc98_core_label, pc98_core_edit, pc98_core_btn):
+                widget.setEnabled(not checked)
+
+        update_pc98_custom_state(use_bundled.isChecked())
+        use_bundled.toggled.connect(update_pc98_custom_state)
+        use_bundled.toggled.connect(lambda checked: self.save_nested_setting(config.USER_CONF_EMULATION, config.USER_CONF_EMULATION_PC98_USE_BUNDLED, checked))
+        pc98_path_btn.clicked.connect(lambda: self.browse_emulator_path(pc98_path_edit))
+        pc98_core_btn.clicked.connect(lambda: self.browse_pc98_core_path(pc98_core_edit))
+        pc98_system_btn.clicked.connect(lambda: self.browse_pc98_system_folder(pc98_system_path))
+        pc98_path_edit.textChanged.connect(lambda text: self.save_nested_setting(config.USER_CONF_EMULATION, config.USER_CONF_EMULATION_PC98_PATH, text))
+        pc98_core_edit.textChanged.connect(lambda text: self.save_nested_setting(config.USER_CONF_EMULATION, config.USER_CONF_EMULATION_PC98_CORE_PATH, text))
+        pc98_system_path.textChanged.connect(lambda text: self.save_nested_setting(config.USER_CONF_EMULATION, config.USER_CONF_EMULATION_PC98_SYSTEM_PATH, text))
+        pc98_config_edit.textChanged.connect(lambda text: self.save_nested_setting(config.USER_CONF_EMULATION, config.USER_CONF_EMULATION_PC98_CONFIG, text))
+        self.emulation_widgets[config.USER_CONF_EMULATION_PC98_PATH] = pc98_path_edit
+        self.emulation_widgets[config.USER_CONF_EMULATION_PC98_CORE_PATH] = pc98_core_edit
+        self.emulation_widgets[config.USER_CONF_EMULATION_PC98_SYSTEM_PATH] = pc98_system_path
+        self.emulation_widgets[config.USER_CONF_EMULATION_PC98_CONFIG] = pc98_config_edit
+
         return emulation_group
 
     def _build_directories_group(self):
@@ -694,18 +792,22 @@ class SettingsTab(QWidget):
         self.folder_inputs = []
 
         folder_settings = [
-            (self.tr("Prefixes Dir:"), config.USER_CONF_PREFIXES_PATH, config.PREFIXES_DIR),
-            (self.tr("Wine Runners Dir:"), config.USER_CONF_WINE_RUNNERS_PATH, config.WINE_RUNNERS_DIR),
-            (self.tr("Proton Runners Dir:"), config.USER_CONF_PROTON_RUNNERS_PATH, config.PROTON_RUNNERS_DIR),
-            (self.tr("Covers Dir:"), config.USER_CONF_COVERS_PATH, config.COVERS_DIR),
-            (self.tr("Timetrack Logs Dir:"), config.USER_CONF_LOGS_PATH, config.LOG_DIR),
+            (self.tr("Prefixes Dir:"), config.USER_CONF_PREFIXES_PATH, config.PREFIXES_DIR, Feature.PREFIXES),
+            (self.tr("Wine Runners Dir:"), config.USER_CONF_WINE_RUNNERS_PATH, config.WINE_RUNNERS_DIR, Feature.RUNNERS),
+            (self.tr("Proton Runners Dir:"), config.USER_CONF_PROTON_RUNNERS_PATH, config.PROTON_RUNNERS_DIR, Feature.RUNNERS),
+            (self.tr("Covers Dir:"), config.USER_CONF_COVERS_PATH, config.COVERS_DIR, None),
+            (self.tr("Timetrack Logs Dir:"), config.USER_CONF_LOGS_PATH, config.LOG_DIR, None),
+        ]
+        folder_settings = [
+            definition for definition in folder_settings
+            if self.platform_ui.supported(definition[3])
         ]
 
         BROWSE_WIDTH = 120
         TRASH_WIDTH = 36
         LAYOUT_SPACING = 6
         
-        for label_text, key, default_val in folder_settings:
+        for label_text, key, default_val, _ in folder_settings:
             layout = QHBoxLayout()
             layout.setSpacing(LAYOUT_SPACING)
             
@@ -765,15 +867,22 @@ class SettingsTab(QWidget):
             version_label += "  📦 AppImage"
         elif runtime == "flatpak":
             version_label += "  📦 Flatpak"
+        elif runtime == "windows":
+            version_label += "  Windows"
         else:
             version_label += "  (native)"
 
         self._sysinfo_values = {}
 
-        def add_value(label, key, value="…"):
+        def add_value(label, key, value="…", requires=None):
             value_label = QLabel(value)
-            self._sysinfo_values[key] = value_label
-            sysinfo_layout.addRow(QLabel(label), value_label)
+            if self.platform_ui.add_row(
+                sysinfo_layout,
+                QLabel(label),
+                value_label,
+                requires=requires,
+            ):
+                self._sysinfo_values[key] = value_label
 
         add_value(self.tr("LVNM Version:"), "app_version", version_label)
         add_value(self.tr("OS:"), "os")
@@ -781,14 +890,18 @@ class SettingsTab(QWidget):
         add_value(self.tr("Desktop:"), "desktop")
         add_value(self.tr("CPU:"), "cpu")
         add_value(self.tr("GPU:"), "gpu")
-        add_value(self.tr("Vulkan Support:"), "vulkan_support")
-        add_value(self.tr("Gamescope:"), "gamescope")
-        add_value(self.tr("linux-rt-upscaler:"), "upscale")
-        add_value(self.tr("Umu-run:"), "umu_run")
-        add_value(self.tr("Winetricks:"), "winetricks")
+        add_value(self.tr("Vulkan Support:"), "vulkan_support", requires=Feature.WINE_CONFIGURATION)
+        add_value(self.tr("Gamescope:"), "gamescope", requires=Feature.GAMESCOPE)
+        add_value(self.tr("linux-rt-upscaler:"), "upscale", requires=Feature.RT_UPSCALER)
+        add_value(self.tr("Umu-run:"), "umu_run", requires=Feature.WINE_CONFIGURATION)
+        add_value(self.tr("Winetricks:"), "winetricks", requires=Feature.WINE_CONFIGURATION)
 
         for pkg in SystemUtils.GSTREAMER_PACKAGES:
-            add_value(f"{pkg}:", f"gstreamer:{pkg}")
+            add_value(
+                f"{pkg}:",
+                f"gstreamer:{pkg}",
+                requires=Feature.WINE_CONFIGURATION,
+            )
         
         return sysinfo_group
 
@@ -806,8 +919,12 @@ class SettingsTab(QWidget):
 
         wineprefixes_label = QLabel(f'<a href="{config.WINEPREFIX_URL}">{config.WINEPREFIX_URL}</a>')
         wineprefixes_label.linkActivated.connect(SystemUtils.open_url)
-
-        about_layout.addRow(QLabel(self.tr("Wineprefixes guide:")), wineprefixes_label)
+        self.platform_ui.add_row(
+            about_layout,
+            QLabel(self.tr("Wineprefixes guide:")),
+            wineprefixes_label,
+            requires=Feature.WINE_CONFIGURATION,
+        )
 
         return about_group
 
@@ -1049,14 +1166,27 @@ class SettingsTab(QWidget):
             self.texthooker_edit.setText(file_path)
 
     def browse_emulator_path(self, target_edit):
+        name_filter = self.tr("Executables (*.exe);;All Files (*)") if IS_WINDOWS else self.tr("Executables (*.AppImage);;All Files (*)")
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             self.tr("Select Emulator Executable"),
             "",
-            self.tr("Executables (*.AppImage);;All Files (*)")
+            name_filter
         )
         if file_path:
             target_edit.setText(file_path)
+
+    def browse_pc98_core_path(self, target_edit):
+        name_filter = self.tr("Libretro cores (*.dll);;All Files (*)") if IS_WINDOWS else self.tr("Libretro cores (*.so);;All Files (*)")
+        file_path, _ = QFileDialog.getOpenFileName(self, self.tr("Select NP2kai Core"), "", name_filter)
+        if file_path:
+            target_edit.setText(file_path)
+
+    def browse_pc98_system_folder(self, target_edit):
+        current_path = target_edit.text().strip()
+        folder = QFileDialog.getExistingDirectory(self, self.tr("Select PC-98 BIOS/font Folder"), current_path)
+        if folder:
+            target_edit.setText(folder)
 
     def _start_background_checks(self):
         self._system_info_worker = SystemInfoWorker()
@@ -1110,11 +1240,14 @@ class SettingsTab(QWidget):
             ),
         }
         for key, value in software_values.items():
-            self._sysinfo_values[key].setText(value)
+            if key in self._sysinfo_values:
+                self._sysinfo_values[key].setText(value)
 
         gstreamer = software_info.get("gstreamer_packages", {})
         for pkg in SystemUtils.GSTREAMER_PACKAGES:
-            self._sysinfo_values[f"gstreamer:{pkg}"].setText(self.check(gstreamer.get(pkg)))
+            key = f"gstreamer:{pkg}"
+            if key in self._sysinfo_values:
+                self._sysinfo_values[key].setText(self.check(gstreamer.get(pkg)))
 
     def _sign_in_gdrive(self):
         """Starts the Google Drive device-flow sign-in using the configured client id/secret."""

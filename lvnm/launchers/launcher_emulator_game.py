@@ -1,6 +1,7 @@
 import shlex
 import os
 import signal
+import subprocess
 import config
 import re
 import logging
@@ -8,6 +9,8 @@ from pathlib import Path
 from system_utils import SystemUtils
 from execution_manager import ExecutionManager
 from launchers.launcher_base_game import LauncherBaseGame
+from pc98_manager import Pc98Manager
+from platform_profile import IS_WINDOWS
 
 logger = logging.getLogger(__name__)
 
@@ -17,32 +20,45 @@ class LauncherEmulatorGame(LauncherBaseGame):
     def prepare_environment(self):
         self.env = SystemUtils.get_clean_env()
 
-        self._restore_flatpak_host_xdg_paths()
-
         # Add user-defined environment variables
         for key, val in self.game.envvar.items():
             self.env[key] = val
 
         emulator_path = self.prefix_info["path"]
         emulator_type = self.prefix_info["type"]
-        extra_args = shlex.split(self.prefix_info.get("config", ""))
+        extra_args = shlex.split(self.prefix_info.get("config", ""), posix=not IS_WINDOWS)
+        if IS_WINDOWS:
+            extra_args = [self._strip_windows_argument_quotes(argument) for argument in extra_args]
+        game_path = self.game.path
+
+        if emulator_type == config.EMULATION_PC98:
+            extra_args = Pc98Manager.build_launch_args(self.game, self.prefix_info["core"], self.prefix_info.get("system_path")) + extra_args
+            game_path = Pc98Manager.resolve_game_media(self.game)
+        else:
+            self._restore_flatpak_host_xdg_paths()
 
         self._enable_flatpak_appimage_fallback(emulator_path)
 
         # RPCS3 settings
         if emulator_type == config.EMULATION_PS3:
             extra_args = ["--no-gui"] + extra_args
-            self.game_path = self._resolve_ps3_boot_arg(self.game.path)
+            game_path = self._resolve_ps3_boot_arg(self.game.path)
 
-        self.cmd = [emulator_path] + extra_args + [self.game.path]
+        self.cmd = [emulator_path] + extra_args + [game_path]
         self.game_dir = str(Path(emulator_path).parent)
 
         # Apply game arguments
         self.cmd = self.apply_game_arguments(self.cmd)
+        if IS_WINDOWS:
+            self.cmd = [self._strip_windows_argument_quotes(argument) for argument in self.cmd]
         # Apply pre launch arguments
-        self.cmd = self.apply_pre_launch_args(self.cmd)
+        if IS_WINDOWS:
+            self.cmd = self._apply_windows_pre_launch_args(self.cmd)
+        else:
+            self.cmd = self.apply_pre_launch_args(self.cmd)
         # Apply Gamescope Wrapper
-        self.cmd = self.apply_gamescope(self.cmd)
+        if not IS_WINDOWS:
+            self.cmd = self.apply_gamescope(self.cmd)
         # Apply flatpak-spawn if flatpak
         self.cmd = self._wrap_flatpak_host_command(self.cmd, emulator_path)
 
@@ -58,10 +74,13 @@ class LauncherEmulatorGame(LauncherBaseGame):
 
         # Run game
         self._log_run_command()
-        self.process = ExecutionManager.run(self.cmd, self.env, wait=False,cwd=self.game_dir, log_callback=self._add_log_line,detached=not is_headless)
+        run_process = ExecutionManager.run_windows if IS_WINDOWS else ExecutionManager.run
+        self.process = run_process(
+            self.cmd, self.env, wait=False, cwd=self.game_dir, log_callback=self._add_log_line, detached=not is_headless
+        )
 
         # Apply linux-rt-upscaler
-        if self.settings.get(config.USER_CONF_RT_UPSCALER_ENABLED, False) and self.game.rtUpscaler.enabled == "true":
+        if not IS_WINDOWS and self.settings.get(config.USER_CONF_RT_UPSCALER_ENABLED, False) and self.game.rtUpscaler.enabled == "true":
             self._launch_linux_rt_upscaler(os.path.basename(self.prefix_info["path"]), cmdline_hint=self.game.path)
 
         return True
@@ -72,12 +91,35 @@ class LauncherEmulatorGame(LauncherBaseGame):
         return False
 
     def stop(self, running_prefix_count=1):
-        if self.process:
+        if not self.process:
+            return
+        if IS_WINDOWS:
             try:
-                pgid = os.getpgid(self.process.pid)
-                os.killpg(pgid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+                self.process.terminate()
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+            except OSError as error:
+                logger.warning(f"Could not stop emulator for '{self.name}': {error}")
+            return
+        try:
+            pgid = os.getpgid(self.process.pid)
+            os.killpg(pgid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    @staticmethod
+    def _strip_windows_argument_quotes(argument: str) -> str:
+        if len(argument) >= 2 and argument[0] == argument[-1] and argument[0] in ('"', "'"):
+            return argument[1:-1]
+        return argument
+
+    def _apply_windows_pre_launch_args(self, cmd: list[str]) -> list[str]:
+        command = self.game.pre_launch_args.strip()
+        if not command:
+            return cmd
+        arguments = shlex.split(command, posix=False)
+        return [self._strip_windows_argument_quotes(argument) for argument in arguments] + cmd
 
     def load_data(self):
         """Loads game and prefix data into the instance."""
@@ -130,7 +172,7 @@ class LauncherEmulatorGame(LauncherBaseGame):
 
     def _wrap_flatpak_host_command(self, cmd: list, emulator_path: str) -> list:
         """Run non AppImage emulator commands outside the Flatpak sandbox."""
-        if SystemUtils.get_runtime_type() != "flatpak" or self._is_appimage(emulator_path):
+        if SystemUtils.get_runtime_type() != "flatpak" or self._is_appimage(emulator_path) or getattr(self, "prefix_info", {}).get("bundled", False):
             return cmd
 
         home = self.env.get("HOME", str(Path.home()))
@@ -147,7 +189,7 @@ class LauncherEmulatorGame(LauncherBaseGame):
             host_cmd.append(f"--env={key}={value}")
 
         self.game_dir = home
-        logger.info("Using host command for emulator: %s", emulator_path)
+        logger.info(f"Using host command for emulator: {emulator_path}")
         return host_cmd + cmd
 
     def _restore_flatpak_host_xdg_paths(self):
@@ -179,7 +221,7 @@ class LauncherEmulatorGame(LauncherBaseGame):
         # Flatpak does not expose the FUSE mount helper/device to the sandbox.
         # Extract to a temporary directory and running from there instead.
         self.env["APPIMAGE_EXTRACT_AND_RUN"] = "1"
-        logger.info("Using AppImage extract-and-run fallback for emulator: %s", emulator_path)
+        logger.info(f"Using AppImage extract-and-run fallback for emulator: {emulator_path}")
 
     @staticmethod
     def _is_appimage(executable: str) -> bool:

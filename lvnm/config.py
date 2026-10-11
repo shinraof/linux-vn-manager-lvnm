@@ -1,5 +1,6 @@
 from pathlib import Path
 import tempfile
+from platform_profile import IS_WINDOWS, get_data_dir
 
 VERSION = 'v0.5.4'
 GIT_URL = 'https://github.com/uunniiblog/linux-vn-manager-lvnm'
@@ -7,7 +8,7 @@ GIT_URL = 'https://github.com/uunniiblog/linux-vn-manager-lvnm'
 # Paths
 BASE_DIR = Path(__file__).parent.resolve()
 LOCALE_DIR = BASE_DIR / "locale"
-DATA_DIR = Path.home() / ".local" / "share" / "lvnm" 
+DATA_DIR = get_data_dir()
 WINE_RUNNERS_DIR = DATA_DIR / "runners" / "wine"
 # PROTON_RUNNERS_DIR = DATA_DIR / "runners" / "proton"
 PROTON_RUNNERS_DIR =  Path.home() / ".local" / "share" / "Steam" / "compatibilitytools.d"
@@ -15,6 +16,11 @@ DXVK_DIR = DATA_DIR / "runners" / "dxvk"
 PREFIXES_DIR = DATA_DIR / "prefixes"
 COVERS_DIR = DATA_DIR / "covers"
 LOG_DIR = DATA_DIR / "tracking"
+PC98_DIR = DATA_DIR / "emulation" / "pc98"
+PC98_SYSTEM_DIR = PC98_DIR / "system"
+PC98_BUNDLED_RETROARCH = Path("/app/libexec/lvnm-pc98/retroarch")
+PC98_BUNDLED_CORE = Path("/app/lib/lvnm/libretro/np2kai_libretro.so")
+PC98_BUNDLED_FONT = Path("/app/share/lvnm/pc98/font.bmp")
 
 # Files
 CODEC_SCRIPT = BASE_DIR / "vn_winestuff" / "codec.sh"
@@ -225,6 +231,11 @@ USER_CONF_EMULATION_PSP_PATH = "psp_path"
 USER_CONF_EMULATION_PSP_CONFIG = "psp_config"
 USER_CONF_EMULATION_SWITCH_PATH = "switch_path"
 USER_CONF_EMULATION_SWITCH_CONFIG = "switch_config"
+USER_CONF_EMULATION_PC98_USE_BUNDLED = "pc98_use_bundled"
+USER_CONF_EMULATION_PC98_PATH = "pc98_path"
+USER_CONF_EMULATION_PC98_CORE_PATH = "pc98_core_path"
+USER_CONF_EMULATION_PC98_SYSTEM_PATH = "pc98_system_path"
+USER_CONF_EMULATION_PC98_CONFIG = "pc98_config"
 
 # Emulation
 EMULATION_PSX = "emulation-psx"
@@ -232,10 +243,13 @@ EMULATION_PS2 = "emulation-ps2"
 EMULATION_PS3 = "emulation-ps3"
 EMULATION_PSP = "emulation-psp"
 EMULATION_SWITCH = "emulation-switch"
+EMULATION_PC98 = "emulation-pc98"
 
 # Native games
 NATIVE_PREFIX_NAME = "Native"
 NATIVE = "native"
+WINDOWS_PREFIX_NAME = "Windows"
+WINDOWS = "windows"
 
 # Available UI languages ("" = follow system locale)
 LANGUAGES = [
@@ -253,9 +267,10 @@ RT_UPSCALING_INSTALLED = False
 
 # Ensure directories exist
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-WINE_RUNNERS_DIR.mkdir(parents=True, exist_ok=True)
-# PROTON_RUNNERS_DIR.mkdir(parents=True, exist_ok=True) # Don't create in case steam not installed
-PREFIXES_DIR.mkdir(parents=True, exist_ok=True)
 COVERS_DIR.mkdir(parents=True, exist_ok=True)
-DXVK_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
+if not IS_WINDOWS:
+    WINE_RUNNERS_DIR.mkdir(parents=True, exist_ok=True)
+    # PROTON_RUNNERS_DIR.mkdir(parents=True, exist_ok=True) # Don't create in case steam not installed
+    PREFIXES_DIR.mkdir(parents=True, exist_ok=True)
+    DXVK_DIR.mkdir(parents=True, exist_ok=True)

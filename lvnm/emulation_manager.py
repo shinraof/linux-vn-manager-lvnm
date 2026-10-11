@@ -1,6 +1,7 @@
 import logging
 
 import config
+from pc98_manager import Pc98Manager
 from settings_manager import SettingsManager
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,7 @@ EMULATOR_DEFINITIONS = [
 ]
 
 EMULATOR_DISPLAY_NAMES = frozenset(display_name for display_name, _, _, _ in EMULATOR_DEFINITIONS)
+PC98_DISPLAY_NAME = "PC-98"
 
 class EmulationManager:
     """Create fake virtual prefixes for any emulator that has a path configured in Settings."""
@@ -38,6 +40,32 @@ class EmulationManager:
                 "virtual": True,
             }
 
+        use_bundled = emulation_settings.get(config.USER_CONF_EMULATION_PC98_USE_BUNDLED, False)
+        custom_path = emulation_settings.get(config.USER_CONF_EMULATION_PC98_PATH, "").strip()
+        custom_core = emulation_settings.get(config.USER_CONF_EMULATION_PC98_CORE_PATH, "").strip()
+        default_system_path = Pc98Manager.get_managed_system_path_default()
+        system_path = emulation_settings.get(config.USER_CONF_EMULATION_PC98_SYSTEM_PATH, default_system_path).strip()
+        if use_bundled and system_path and config.PC98_BUNDLED_RETROARCH.is_file() and config.PC98_BUNDLED_CORE.is_file():
+            virtual_prefixes[PC98_DISPLAY_NAME] = {
+                "type": config.EMULATION_PC98,
+                "path": str(config.PC98_BUNDLED_RETROARCH),
+                "core": str(config.PC98_BUNDLED_CORE),
+                "system_path": system_path,
+                "config": emulation_settings.get(config.USER_CONF_EMULATION_PC98_CONFIG, "").strip(),
+                "bundled": True,
+                "virtual": True,
+            }
+        elif custom_path and custom_core and system_path:
+            virtual_prefixes[PC98_DISPLAY_NAME] = {
+                "type": config.EMULATION_PC98,
+                "path": custom_path,
+                "core": custom_core,
+                "system_path": system_path,
+                "config": emulation_settings.get(config.USER_CONF_EMULATION_PC98_CONFIG, "").strip(),
+                "bundled": False,
+                "virtual": True,
+            }
+
         return virtual_prefixes
 
     @staticmethod
@@ -46,10 +74,10 @@ class EmulationManager:
 
     @staticmethod
     def get_emulator_prefixes() -> list[str]:
-        """Returns a list of display names ['PSX', 'PS2', 'PS3', 'PSP', 'Switch']."""
-        return list(EMULATOR_DISPLAY_NAMES)
+        """Returns a list of display names, including PC-98."""
+        return list(EMULATOR_DISPLAY_NAMES | {PC98_DISPLAY_NAME})
     
     @staticmethod
     def is_emulated_game(game_card) -> bool:
         """Unused: True if this game's prefix is a virtual emulator prefix"""
-        return game_card.prefix in EMULATOR_DISPLAY_NAMES
+        return game_card.prefix in EMULATOR_DISPLAY_NAMES or game_card.prefix == PC98_DISPLAY_NAME
