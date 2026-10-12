@@ -2,6 +2,9 @@
 
 Notable changes for each release are listed below, newest first.
 
+## [v0.6.1]
+- Added new option in settings to automatically increase the DPI temporaly when running wine utilities like regedit or winecfg in >1080p monitors for better visibility.
+
 ## [v0.6.0]
 - Flatpak release:
     - New Flatpak release, it bundles everything the application uses except gamescope (You need to install gamescope flatpak to use it). Every feature so far in the application should still work as normal.

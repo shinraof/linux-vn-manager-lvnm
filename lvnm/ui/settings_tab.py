@@ -128,6 +128,15 @@ class SettingsTab(QWidget):
         env_btn_layout.addStretch()
         self.platform_ui.add_row(settings_layout, env_label, env_btn_layout, requires=Feature.WINE_CONFIGURATION)
 
+        auto_dpi_layout = QHBoxLayout()
+        self.auto_dpi_checkbox = QCheckBox(self.tr("Enable"))
+        self.auto_dpi_checkbox.setChecked(self.user_settings.get(config.USER_CONF_AUTO_DPI_UTILITIES, False))
+        auto_dpi_description = QLabel(self.tr("Launching Wine Utilities tools will automatically increase prefix's DPI in high resolution monitors for better visibility"))
+        auto_dpi_description.setWordWrap(True)
+        auto_dpi_layout.addWidget(self.auto_dpi_checkbox)
+        auto_dpi_layout.addWidget(auto_dpi_description, 1)
+        self.platform_ui.add_row(settings_layout, QLabel(self.tr("Winetools Auto DPI:")), auto_dpi_layout, requires=Feature.WINE_CONFIGURATION)
+
         # Added SteamGridDB API Key Section
         sgdb_container = QHBoxLayout()
         initial_key = self.user_settings.get(config.USER_CONF_SGDB_API_KEY, "")
@@ -944,6 +953,7 @@ class SettingsTab(QWidget):
         self.log_to_file_checkbox.stateChanged.connect(lambda s: self.save_setting(config.USER_CONF_LOG_TO_FILE, bool(s)))
         self.log_wine_traces.stateChanged.connect(lambda s: self.save_setting(config.USER_CONF_LOGS_WINE, bool(s)))
         self.gs_checkbox.stateChanged.connect(lambda s: self.save_setting(config.USER_CONF_GAMESCOPE_ENABLED, bool(s)))
+        self.auto_dpi_checkbox.stateChanged.connect(lambda s: self.save_setting(config.USER_CONF_AUTO_DPI_UTILITIES, bool(s)))
         self.gs_params.textChanged.connect(lambda t: self.save_setting("gamescope_params", t))
         self.upscaler_checkbox.stateChanged.connect(lambda s: self.save_setting(config.USER_CONF_RT_UPSCALER_ENABLED, bool(s)))
         self.upscaler_params.textChanged.connect(lambda t: self.save_setting(config.USER_CONF_RT_UPSCALER_PARAMS, t))

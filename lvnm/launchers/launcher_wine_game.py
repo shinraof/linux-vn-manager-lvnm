@@ -4,6 +4,10 @@ import json
 import config
 import subprocess
 import logging
+import re
+import threading
+import atexit
+import tempfile
 from pathlib import Path
 from model.game_card import GameCard, GameScope
 from execution_manager import ExecutionManager
@@ -13,6 +17,7 @@ from launchers.launcher_base_game import LauncherBaseGame
 logger = logging.getLogger(__name__)
 
 class LauncherWineGame(LauncherBaseGame):
+    _dpi_registry_key = r"HKCU\Control Panel\Desktop"
     #PREFIXES_DATA = Path(config.PREFIXES_DATA)
     #GAME_DATA = Path(config.GAMES_DATA)
 
@@ -146,13 +151,107 @@ class LauncherWineGame(LauncherBaseGame):
             if self.is_proton:
                 self.env["PROTON_VERB"] = "runinprefix"
 
-            self._log_run_command(Path(self.prefix_info["runner"]))
-            self.process = ExecutionManager.run(self.cmd, self.env, wait=False, cwd=self.game_dir)
+            # Automatically modify DPI according to monitor's resolution
+            dpi_state = self._set_temporary_utility_dpi() if self.settings.get(config.USER_CONF_AUTO_DPI_UTILITIES, False) else None
+            if dpi_state:
+                cleanup_lock = threading.Lock()
+                cleaned_up = False
+
+                def restore_dpi():
+                    nonlocal cleaned_up
+                    with cleanup_lock:
+                        if cleaned_up:
+                            return
+                        cleaned_up = True
+                        self._restore_utility_dpi(*dpi_state)
+                        atexit.unregister(restore_dpi)
+
+                atexit.register(restore_dpi)
+            try:
+                self._log_run_command(Path(self.prefix_info["runner"]))
+                self.process = ExecutionManager.run(self.cmd, self.env, wait=False, cwd=self.game_dir)
+            except Exception:
+                if dpi_state:
+                    restore_dpi()
+                raise
+            if dpi_state:
+                threading.Thread(target=self._restore_dpi_after_exit, args=(self.process, restore_dpi), daemon=True, name="lvnm-utility-dpi").start()
             return True
             
         except Exception as e:
             logging.error(f"Run in prefix failed: {e}")
             raise RuntimeError(f"Run in prefix failed: {e}")
+
+    def _utility_registry_command(self, *args):
+        return [self.umu_path, "reg", *args] if self.is_proton else [self.env["WINE"], "reg", *args]
+
+    def _query_utility_dpi(self):
+        with tempfile.TemporaryFile() as output:
+            result = subprocess.run(
+                self._utility_registry_command("query", self._dpi_registry_key, "/v", "LogPixels"),
+                env=self.env, stdout=output, stderr=subprocess.STDOUT, timeout=15
+            )
+            output.seek(0)
+            response = output.read().decode("utf-8", errors="replace")
+
+        if result.returncode:
+            return None
+
+        match = re.search(r"\bLogPixels\s+REG_DWORD\s+(0x[0-9a-fA-F]+|\d+)\b", response, re.IGNORECASE)
+        if not match:
+            raise RuntimeError(f"Unable to read the prefix DPI: {response.strip()}")
+
+        return int(match.group(1), 0)
+
+    def _write_utility_dpi(self, dpi):
+        if dpi is None:
+            cmd = self._utility_registry_command("delete", self._dpi_registry_key, "/v", "LogPixels", "/f")
+        else:
+            cmd = self._utility_registry_command("add", self._dpi_registry_key, "/v", "LogPixels", "/t", "REG_DWORD", "/d", str(dpi), "/f")
+
+        subprocess.run(cmd, env=self.env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15, check=True)
+
+    def _set_temporary_utility_dpi(self):
+        """
+        Modify DPI for 1440 and 2160p screens.
+        Revert after program closes.
+        """
+        resolution = SystemUtils.get_mainscreen_resolution()
+        if not resolution or resolution[1] <= 1080:
+            return None
+        dpi = 144 if resolution[1] < 1440 else 168
+        prefix_path = self.prefix_info["path"]
+
+        try:
+            original = self._query_utility_dpi()
+            if original == dpi:
+                return None
+            self._write_utility_dpi(dpi)
+            logger.info(f"Temporarily set prefix '{prefix_path}' DPI to {dpi} for {self.game.path}.")
+            return prefix_path, original, dpi
+        except Exception:
+            if "original" in locals():
+                try:
+                    self._write_utility_dpi(original)
+                except Exception as error:
+                    logger.error(f"Failed to roll back prefix '{prefix_path}' DPI after setup error: {error}")
+            raise
+
+    def _restore_utility_dpi(self, prefix_path, original, temporary):
+        try:
+            if self._query_utility_dpi() == temporary:
+                self._write_utility_dpi(original)
+                logger.info(f"Restored prefix '{prefix_path}' DPI after utility exit.")
+            else:
+                logger.info(f"Prefix '{prefix_path}' DPI changed while the utility was open; keeping the new value.")
+        except Exception as error:
+            logger.error(f"Failed to restore prefix '{prefix_path}' DPI: {error}")
+
+    def _restore_dpi_after_exit(self, process, restore_dpi):
+        try:
+            process.wait()
+        finally:
+            restore_dpi()
 
     def run_texthooker(self, text_hooker_path: str, prefix_name: str, gamescope: GameScope, target_exe_path: str):
         """
