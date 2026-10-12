@@ -217,7 +217,10 @@ class LauncherWineGame(LauncherBaseGame):
         Revert after program closes.
         """
         resolution = SystemUtils.get_mainscreen_resolution()
-        if not resolution or resolution[1] <= 1080:
+        if not resolution:
+            logger.warning("Auto DPI skipped because the primary monitor resolution could not be detected.")
+            return None
+        if resolution[1] <= 1080:
             return None
         dpi = 144 if resolution[1] < 1440 else 168
         prefix_path = self.prefix_info["path"]

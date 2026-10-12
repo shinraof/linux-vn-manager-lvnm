@@ -655,10 +655,80 @@ class SystemUtils:
         return None
 
     @staticmethod
+    def get_mainscreen_resolution_qt() -> tuple[int, int] | None:
+        """Estimate screen pixels from Qt when the compositor mode is unavailable."""
+        app = QApplication.instance()
+        screen = app.primaryScreen() if app else None
+        if not screen:
+            return None
+
+        size = screen.size()
+        scale = screen.devicePixelRatio()
+        if size.width() <= 0 or size.height() <= 0 or scale <= 0:
+            return None
+
+        resolution = round(size.width() * scale), round(size.height() * scale)
+        logger.debug(f"Qt screen estimate: {size.width()}x{size.height()} at {scale}x -> {resolution[0]}x{resolution[1]}")
+        return resolution
+
+    @staticmethod
+    def get_mainscreen_resolution_kscreen() -> tuple[int, int] | None:
+        """Read KDE's active output mode, which is independent of desktop scaling."""
+        command = ["flatpak-spawn", "--host", "kscreen-doctor", "-j"] if SystemUtils.get_runtime_type() == "flatpak" else ["kscreen-doctor", "-j"]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=5, check=True)
+            outputs = json.loads(result.stdout).get("outputs", [])
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError) as error:
+            logger.debug(f"KScreen monitor lookup unavailable: {error}")
+            return None
+
+        active = [output for output in outputs if output.get("connected") and output.get("enabled", True)]
+        if not active:
+            return None
+        primary = min(active, key=lambda output: output.get("priority") or float("inf"))
+        mode = next((mode for mode in primary.get("modes", []) if mode.get("id") == primary.get("currentModeId")), None)
+        size = mode.get("size", {}) if mode else {}
+        width, height = size.get("width"), size.get("height")
+        if not isinstance(width, int) or not isinstance(height, int) or width <= 0 or height <= 0:
+            return None
+        logger.debug(f"KScreen primary mode: {width}x{height} at scale {primary.get('scale')}")
+        return width, height
+
+    @staticmethod
+    def _parse_edid_resolution(edid_bytes: bytes) -> tuple[int, int] | None:
+        """Read the preferred pixel size from EDID's first detailed timing."""
+        if len(edid_bytes) < 72 or edid_bytes[:8] != b'\x00\xff\xff\xff\xff\xff\xff\x00':
+            return None
+        width = ((edid_bytes[58] >> 4) << 8) | edid_bytes[56]
+        height = ((edid_bytes[61] >> 4) << 8) | edid_bytes[59]
+        return (width, height) if width > 0 and height > 0 else None
+
+    @staticmethod
+    def get_mainscreen_resolution_flatpak_edid() -> tuple[int, int] | None:
+        """Read the primary output's EDID on the host when Flatpak hides sysfs."""
+        app = QApplication.instance()
+        screen = app.primaryScreen() if app else None
+        output_name = screen.name() if screen else ""
+        if not output_name or not re.fullmatch(r"[A-Za-z0-9_.-]+", output_name):
+            return None
+
+        script = 'for file in /sys/class/drm/card*-"$1"/edid; do if [ -r "$file" ]; then cat "$file"; exit 0; fi; done; exit 1'
+        try:
+            result = subprocess.run(["flatpak-spawn", "--host", "sh", "-c", script, "sh", output_name], capture_output=True, timeout=5, check=True)
+        except (OSError, subprocess.SubprocessError) as error:
+            logger.debug(f"Host EDID lookup unavailable for {output_name}: {error}")
+            return None
+
+        resolution = SystemUtils._parse_edid_resolution(result.stdout)
+        if resolution:
+            logger.debug(f"Host EDID for {output_name}: {resolution[0]}x{resolution[1]}")
+        return resolution
+
+    @staticmethod
     def get_mainscreen_resolution() -> tuple[int, int]:
         """
-        Returns the primary monitor's physical resolution by reading
-        EDID directly from the kernel sysfs.
+        Return the primary monitor's pixel resolution from EDID or display tools.
+        Flatpak tries KDE's active mode, host EDID, then a Qt estimate.
         """
 
         def _get_primary_output_name() -> str | None:
@@ -673,33 +743,6 @@ class SystemUtils:
             for line in out.splitlines():
                 if "*" in line:
                     return line.strip().split()[-1]  # last token is the output name
-            return None
-
-        def _parse_edid_resolution(edid_bytes: bytes) -> tuple[int, int] | None:
-            """
-            Parse the preferred (native) resolution from EDID binary data.
-
-            EDID spec (section 3.10): bytes 54-71 are the first detailed
-            timing descriptor, which encodes the native/preferred resolution.
-
-            byte 56      : H active pixels, low 8 bits
-            byte 58 >> 4 : H active pixels, high 4 bits
-            byte 59      : V active lines,  low 8 bits
-            byte 61 >> 4 : V active lines,  high 4 bits
-            """
-            if len(edid_bytes) < 72:
-                return None
-
-            # Validate EDID header (first 8 bytes must be 00 FF FF FF FF FF FF 00)
-            if edid_bytes[:8] != b'\x00\xff\xff\xff\xff\xff\xff\x00':
-                return None
-
-            h_active = ((edid_bytes[58] >> 4) << 8) | edid_bytes[56]
-            v_active = ((edid_bytes[61] >> 4) << 8) | edid_bytes[59]
-
-            if h_active > 0 and v_active > 0:
-                logger.debug(f"h_active: {h_active}, v_active: {v_active}")
-                return h_active, v_active
             return None
 
         def _edid_resolution(output_name: str) -> tuple[int, int] | None:
@@ -717,7 +760,7 @@ class SystemUtils:
                     with open(edid_path, "rb") as f:
                         edid_bytes = f.read()
                     if edid_bytes:
-                        result = _parse_edid_resolution(edid_bytes)
+                        result = SystemUtils._parse_edid_resolution(edid_bytes)
                         if result:
                             return result
                 except OSError:
@@ -730,7 +773,19 @@ class SystemUtils:
             if result:
                 return result
 
-        return SystemUtils.get_mainscreen_resolution_xrandr()
+        if SystemUtils.get_runtime_type() == "flatpak":
+            if SystemUtils.is_desktop_environment("KDE"):
+                result = SystemUtils.get_mainscreen_resolution_kscreen()
+                if result:
+                    return result
+            result = SystemUtils.get_mainscreen_resolution_flatpak_edid()
+            if result:
+                return result
+            result = SystemUtils.get_mainscreen_resolution_qt()
+            if result:
+                return result
+
+        return SystemUtils.get_mainscreen_resolution_xrandr() or SystemUtils.get_mainscreen_resolution_qt()
 
     @staticmethod
     def get_tool_path(tool_name: str) -> str:
