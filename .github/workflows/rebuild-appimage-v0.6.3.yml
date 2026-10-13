@@ -40,6 +40,7 @@ jobs:
           with tempfile.TemporaryDirectory() as test_temp:
               env = os.environ.copy()
               env['TMPDIR'] = test_temp
+              env['QT_DEBUG_PLUGINS'] = '1'
               with open('appimage-startup.log', 'w') as log:
                   process = subprocess.Popen(['./LVNM-x86_64.AppImage', '--appimage-extract-and-run'], env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
                   try:
