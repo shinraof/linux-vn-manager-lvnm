@@ -24,7 +24,7 @@ jobs:
       - name: Install GUI validation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb xdotool libegl1 libgl1 libopengl0 libxcb-icccm4 libxcb-keysyms1 libxcb-util1 libxcb-cursor0 libxcb-image0 libxkbcommon-x11-0 libxcb-xkb1
+          sudo apt-get install -y xvfb xdotool libegl1 libgl1 libopengl0 libxcb-icccm4 libxcb-keysyms1 libxcb-util1 libxcb-cursor0 libxcb-image0 libxcb-shape0 libxkbcommon-x11-0 libxcb-xkb1
       - name: Check packaged version and visible window
         run: |
           chmod +x LVNM-x86_64.AppImage

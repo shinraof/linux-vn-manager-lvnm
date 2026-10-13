@@ -31,7 +31,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfuse2 libxcb1 libxcb-icccm4 libxcb-keysyms1 libxcb-util1 libxcb-cursor0 libxcb-image0 libxkbcommon-x11-0 libxcb-xkb1
+          sudo apt-get install -y libfuse2 libxcb1 libxcb-icccm4 libxcb-keysyms1 libxcb-util1 libxcb-cursor0 libxcb-image0 libxcb-shape0 libxkbcommon-x11-0 libxcb-xkb1
           # pip install PySide6 setproctitle requests pyinstaller
           # Add any other requirements from your requirements.txt if needed
           pip install -r requirements.txt
