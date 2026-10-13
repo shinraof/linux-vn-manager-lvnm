@@ -49,12 +49,13 @@ jobs:
 
       - name: Smoke test packaged application
         run: |
-          timeout 30 flatpak-builder --run flatpak-build flatpak/io.github.uunniiblog.lvnm.yml \
-            env QT_QPA_PLATFORM=offscreen python3 /app/share/lvnm/launcher.py --version
-          timeout 30 flatpak-builder --run flatpak-build flatpak/io.github.uunniiblog.lvnm.yml \
-            env QT_QPA_PLATFORM=offscreen python3 - <<'PY'
+          flatpak install --user --noninteractive -y LVNM-x86_64.flatpak
+          timeout 30 flatpak run --user --env=QT_QPA_PLATFORM=offscreen io.github.uunniiblog.lvnm --version
+          timeout 30 flatpak run --user --env=QT_QPA_PLATFORM=offscreen --command=python3 \
+            io.github.uunniiblog.lvnm - <<'PY'
           import sys
           sys.path.insert(0, "/app/share/lvnm")
+          import pypresence
           from PySide6.QtCore import QTimer
           from PySide6.QtWidgets import QApplication
           import launcher
