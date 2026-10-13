@@ -72,3 +72,41 @@ jobs:
             LVNM-x86_64.AppImage
             SHA256SUMS-AppImage
             appimage-startup.log
+
+  stage-release:
+    needs: validate
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: appimage-verified
+      - name: Stage verified AppImage release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          sha256sum --check SHA256SUMS-AppImage
+          cat > release-notes.md <<'EOF'
+          LVNM v0.6.3 rebuilt as a Linux x86_64 AppImage from release commit `8e6eca33315f9aacf88d22887b3c264e010af3ab`.
+
+          This packages the same application code as the v0.6.3 Flatpak, including the built-in LVNM Discord Application ID, VNDB title selection, and the option to hide explicit covers in Discord presence.
+
+          Download `LVNM-x86_64.AppImage`, make it executable, and run it:
+
+          ```sh
+          chmod +x LVNM-x86_64.AppImage
+          ./LVNM-x86_64.AppImage
+          ```
+
+          If FUSE is unavailable, use `./LVNM-x86_64.AppImage --appimage-extract-and-run`.
+
+          The build bundles UMU 1.4.4 and Winetricks 20260125. Wine/Proton and their native graphics dependencies remain supplied by your system. This is a format rebuild; it does not change texthooker launch code.
+
+          Validation: packaged version reports `v0.6.3`, and the packaged LVNM window starts and remains visible under Xvfb. `SHA256SUMS-AppImage` contains the AppImage's SHA-256 checksum.
+          EOF
+          gh release create appimage-v0.6.3 LVNM-x86_64.AppImage SHA256SUMS-AppImage \
+            --target 8e6eca33315f9aacf88d22887b3c264e010af3ab \
+            --title 'LVNM v0.6.3 AppImage' --notes-file release-notes.md \
+            --draft --latest=false
