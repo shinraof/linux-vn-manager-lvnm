@@ -81,11 +81,6 @@ class SettingsTab(QWidget):
         self.discord_enabled = QCheckBox(self.tr("Show the game I am playing on Discord"))
         self.discord_enabled.setChecked(self.user_settings.get(config.USER_CONF_DISCORD_ENABLED, False))
         layout.addRow(self.discord_enabled)
-        self.discord_client_id = QLineEdit(str(self.user_settings.get(config.USER_CONF_DISCORD_CLIENT_ID, "")))
-        self.discord_client_id.setPlaceholderText(self.tr("Discord Application ID"))
-        self.discord_client_id.setMaxLength(20)
-        self.discord_client_id.setEnabled(self.discord_enabled.isChecked())
-        layout.addRow(self.tr("Application ID:"), self.discord_client_id)
         self.discord_title_mode = QComboBox()
         self.discord_title_mode.addItem(self.tr("Library name"), "library")
         self.discord_title_mode.addItem(self.tr("VNDB native title"), "native")
@@ -104,31 +99,18 @@ class SettingsTab(QWidget):
         ))
         layout.addRow(self.discord_hide_explicit_covers)
         help_label = QLabel(self.tr(
-            'Create an application in the <a href="https://discord.com/developers/applications">Discord Developer Portal</a> '
-            'and paste its Application ID here. Keep the Discord desktop app running. '
-            'The game name and online cover are shared while it runs. Local image files cannot be displayed.'
+            "Keep the Discord desktop app running and enable activity sharing in Discord. "
+            "No Application ID setup is needed. The game name and online cover are shared while it runs. "
+            "Local image files cannot be displayed."
         ))
         help_label.setWordWrap(True)
-        help_label.linkActivated.connect(SystemUtils.open_url)
         layout.addRow(help_label)
-        self.discord_id_hint = QLabel(self.tr("Enter a valid Application ID (17–20 digits) to enable presence."))
-        self.discord_id_hint.setWordWrap(True)
-        layout.addRow(self.discord_id_hint)
-        self._update_discord_id_hint()
         return group
 
-    def _update_discord_id_hint(self):
-        client_id = self.discord_client_id.text().strip()
-        valid = client_id.isascii() and client_id.isdigit() and 17 <= len(client_id) <= 20
-        self.discord_id_hint.setVisible(self.discord_enabled.isChecked() and not valid)
-
     def _save_discord_settings(self):
-        self.discord_client_id.setEnabled(self.discord_enabled.isChecked())
         self.discord_title_mode.setEnabled(self.discord_enabled.isChecked())
         self.discord_hide_explicit_covers.setEnabled(self.discord_enabled.isChecked())
-        self._update_discord_id_hint()
         self.save_setting(config.USER_CONF_DISCORD_ENABLED, self.discord_enabled.isChecked())
-        self.save_setting(config.USER_CONF_DISCORD_CLIENT_ID, self.discord_client_id.text().strip())
         self.save_setting(config.USER_CONF_DISCORD_TITLE_MODE, self.discord_title_mode.currentData())
         self.save_setting(config.USER_CONF_DISCORD_HIDE_EXPLICIT_COVERS, self.discord_hide_explicit_covers.isChecked())
         DiscordPresenceManager.get_instance().refresh()
@@ -1002,8 +984,6 @@ class SettingsTab(QWidget):
 
     def _connect_signals(self):
         self.discord_enabled.toggled.connect(self._save_discord_settings)
-        self.discord_client_id.editingFinished.connect(self._save_discord_settings)
-        self.discord_client_id.textChanged.connect(self._update_discord_id_hint)
         self.discord_title_mode.currentIndexChanged.connect(self._save_discord_settings)
         self.discord_hide_explicit_covers.toggled.connect(self._save_discord_settings)
         self.font_btn.clicked.connect(self.browse_font_folder)

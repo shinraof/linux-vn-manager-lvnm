@@ -139,12 +139,17 @@ If you face any issues I recommend to enable "Write logging to file" and check t
 
 ## Discord Rich Presence
 
-In **Settings → Discord Rich Presence**, enable **Show the game I am playing on Discord**
-and enter a Discord **Application ID**. Create an application at
-https://discord.com/developers/applications and copy the ID from its General Information
-page. The ID is public; no bot token, client secret, or Discord login credentials are needed.
+In **Settings → Discord Rich Presence**, enable **Show the game I am playing on Discord**.
+LVNM uses a bundled public Discord Application ID, so no manual ID setup, bot token,
+client secret, or Discord login credentials are needed.
 Keep the Discord desktop app running and enable activity sharing in Discord's settings.
-Presence is disabled by default.
+Presence is disabled by default. Existing saved custom Application IDs remain supported;
+an empty or invalid saved ID falls back to the bundled ID.
+
+The shared-ID approach follows [Tadoku's Discord integration](https://github.com/Eroge-Abyss/tadoku/blob/0fc56ae66ac4358d8b1625dd16b444f1697f13d1/src-tauri/src/services/discord/mod.rs).
+Maintainers configure `DISCORD_APPLICATION_ID` in `lvnm/config.py` once using the
+LVNM application's public ID. This identifies the application to Discord and is
+not a secret. End users do not need a Developer Portal application.
 
 Choose **Game title → Library name**, **VNDB native title**, or **VNDB translated
 title (English)**. The VNDB options use the game's VNDB ID. Native titles use
@@ -160,7 +165,7 @@ presence image. It uses the saved SteamGridDB/VNDB cover URL, resolving a VNDB c
 for older entries that only have a local cover. Without an online cover, it shows the
 game name without an image. Discord cannot access local image files, and LVNM does
 not upload them. If you want different artwork, select an online cover in the game's
-advanced settings. Discord may still use your application's name in some views;
+advanced settings. Discord may still use the shared application's name in some views;
 the game name is also included in the activity details.
 
 Enable **Hide explicit VNDB covers** to omit sexually explicit VNDB cover images
@@ -180,8 +185,8 @@ restarted Discord client does not prevent launching games; LVNM retries in the
 background. The browser version of Discord does not provide desktop RPC.
 
 Flatpak builds allow the standard native and Flatpak Discord IPC locations. Other
-sandboxed Discord installations may need access to their IPC socket. The Application
-ID must refer to a real Discord application; connection errors are recorded in LVNM's log.
+sandboxed Discord installations may need access to their IPC socket. Connection errors
+are recorded in LVNM's log.
 
 ## Timetracking
 Can be enabled in settings.

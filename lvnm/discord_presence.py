@@ -17,6 +17,15 @@ from settings_manager import SettingsManager
 logger = logging.getLogger(__name__)
 
 
+def discord_application_id(settings):
+    """Preserve valid legacy overrides; new profiles use the bundled public ID."""
+    for value in (settings.get(config.USER_CONF_DISCORD_CLIENT_ID, ""), config.DISCORD_APPLICATION_ID):
+        client_id = str(value or "").strip()
+        if re.fullmatch(r"[0-9]{17,20}", client_id):
+            return client_id
+    return ""
+
+
 def image_url(value):
     """Discord fetches artwork itself and cannot read local cover files."""
     try:
@@ -272,7 +281,7 @@ class DiscordPresenceManager(QObject):
     def refresh(self):
         if self._closed:
             return
-        client_id = str(self.settings.get(config.USER_CONF_DISCORD_CLIENT_ID, "")).strip()
+        client_id = discord_application_id(self.settings)
         enabled = self.settings.get(config.USER_CONF_DISCORD_ENABLED, False)
         activity = next(reversed(self._games.values()), None)
         title_mode = self.settings.get(config.USER_CONF_DISCORD_TITLE_MODE, "library")
@@ -282,7 +291,7 @@ class DiscordPresenceManager(QObject):
                 title_mode=title_mode if title_mode in {"library", "native", "translated"} else "library",
                 hide_explicit_covers=bool(self.settings.get(config.USER_CONF_DISCORD_HIDE_EXPLICIT_COVERS, False)),
             )
-        if not enabled or not re.fullmatch(r"[0-9]{17,20}", client_id):
+        if not enabled or not client_id:
             activity = None
         if activity and self._worker is None:
             try:

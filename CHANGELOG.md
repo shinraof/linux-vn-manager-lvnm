@@ -2,6 +2,12 @@
 
 Notable changes for each release are listed below, newest first.
 
+## [v0.6.3]
+- Discord Rich Presence now uses a bundled public LVNM Application ID, following Tadoku's shared-application approach. Users only need to enable presence and keep Discord running.
+- Removed the manual Application ID field and setup instructions from Settings.
+- Preserved existing valid custom IDs; empty or invalid saved IDs fall back to the bundled LVNM application.
+- Kept VNDB title preferences, cover filtering, and game lifecycle behavior unchanged.
+
 ## [v0.6.2]
 - Added optional Discord Rich Presence with the current game's title, online cover, and elapsed time for GUI launches, CLI launches, and externally tracked games.
 - Added a Discord title preference for the library name, VNDB native title, or VNDB English title, with fallbacks when metadata is unavailable.

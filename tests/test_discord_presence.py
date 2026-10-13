@@ -60,12 +60,35 @@ class PresenceManagerTests(unittest.TestCase):
         self.factory.assert_called_once()
         self.assertEqual(self.worker.publish.call_args.args[1].name, "Library title")
 
-    def test_invalid_application_id_does_not_connect(self):
+    def test_fresh_profile_uses_bundled_application_id(self):
+        self.settings.pop(config.USER_CONF_DISCORD_CLIENT_ID)
         self.settings[config.USER_CONF_DISCORD_ENABLED] = True
-        for value in ("", "token", "123", "１" * 18, "1" * 21):
+        self.manager.game_started(card())
+        self.factory.assert_called_once()
+        self.assertEqual(self.worker.publish.call_args.args[0], config.DISCORD_APPLICATION_ID)
+        self.assertEqual(self.worker.publish.call_args.args[1].name, "Library title")
+        self.assertNotIn(config.USER_CONF_DISCORD_CLIENT_ID, self.settings)
+
+    def test_valid_legacy_application_id_is_preserved(self):
+        self.settings[config.USER_CONF_DISCORD_ENABLED] = True
+        self.settings[config.USER_CONF_DISCORD_CLIENT_ID] = f" {CLIENT_ID} "
+        self.manager.game_started(card())
+        self.assertEqual(self.worker.publish.call_args.args[0], CLIENT_ID)
+        self.assertEqual(self.settings[config.USER_CONF_DISCORD_CLIENT_ID], f" {CLIENT_ID} ")
+
+    def test_invalid_saved_application_id_falls_back_to_bundled_id(self):
+        self.settings[config.USER_CONF_DISCORD_ENABLED] = True
+        for value in (None, "", "token", "123", "１" * 18, "1" * 21):
             self.settings[config.USER_CONF_DISCORD_CLIENT_ID] = value
             self.manager.game_started(card())
             self.manager.refresh()
+            self.assertEqual(self.worker.publish.call_args.args[0], config.DISCORD_APPLICATION_ID)
+
+    def test_missing_build_id_does_not_connect_without_a_legacy_override(self):
+        self.settings.pop(config.USER_CONF_DISCORD_CLIENT_ID)
+        self.settings[config.USER_CONF_DISCORD_ENABLED] = True
+        with patch.object(config, "DISCORD_APPLICATION_ID", ""):
+            self.manager.game_started(card())
         self.factory.assert_not_called()
 
     def test_latest_game_and_restore_previous_start_time(self):
@@ -535,7 +558,7 @@ class IntegrationTests(unittest.TestCase):
         from PySide6.QtCore import QSettings
         from ui.settings_tab import SettingsTab
         from ui.theme_manager import ThemeManager
-        settings = MemorySettings()
+        settings = MemorySettings({config.USER_CONF_DISCORD_CLIENT_ID: CLIENT_ID})
         presence = Mock()
         with tempfile.TemporaryDirectory() as directory, \
              patch("ui.settings_tab.SettingsManager", return_value=settings), \
@@ -545,11 +568,10 @@ class IntegrationTests(unittest.TestCase):
             tab = SettingsTab(theme)
             try:
                 self.assertFalse(tab.discord_enabled.isChecked())
-                self.assertFalse(tab.discord_client_id.isEnabled())
+                self.assertFalse(hasattr(tab, "discord_client_id"))
+                self.assertFalse(hasattr(tab, "discord_id_hint"))
                 self.assertFalse(tab.discord_hide_explicit_covers.isChecked())
                 tab.discord_enabled.setChecked(True)
-                tab.discord_client_id.setText(CLIENT_ID)
-                tab.discord_client_id.editingFinished.emit()
                 tab.discord_title_mode.setCurrentIndex(tab.discord_title_mode.findData("native"))
                 self.assertEqual(settings[config.USER_CONF_DISCORD_TITLE_MODE], "native")
                 self.assertEqual(settings[config.USER_CONF_DISCORD_CLIENT_ID], CLIENT_ID)
@@ -565,6 +587,7 @@ class IntegrationTests(unittest.TestCase):
                 reloaded = SettingsTab(theme)
                 try:
                     self.assertTrue(reloaded.discord_hide_explicit_covers.isChecked())
+                    self.assertFalse(hasattr(reloaded, "discord_client_id"))
                 finally:
                     reloaded.deleteLater()
             finally:
