@@ -1124,6 +1124,8 @@ class GameSidebar(QFrame):
                 logger.debug(f"[on_vndb_finished] overwriting cover_path '{game_card.cover_path}' -> '{cover_path}'")
                 game_card.ogtitle = og_title
                 game_card.cover_path = cover_path
+                if not game_card.cover_source_url:
+                    game_card.cover_source_url = (results[0].get("image") or {}).get("url", "")
                 GameManager.update_game(game_name, game_card.to_dict())
 
             self.on_metadata_updated(game_name)
@@ -1132,6 +1134,7 @@ class GameSidebar(QFrame):
             if self.current_game and self.current_game.name == game_name:
                 self.current_game.ogtitle = og_title
                 self.current_game.cover_path = game_card.cover_path
+                self.current_game.cover_source_url = game_card.cover_source_url
                 self.update_game_cover()
                 logger.info(f"Background metadata update complete for {game_name}")
 

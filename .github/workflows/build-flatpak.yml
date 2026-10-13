@@ -47,9 +47,43 @@ jobs:
             io.github.uunniiblog.lvnm \
             --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo
 
+      - name: Smoke test packaged application
+        run: |
+          timeout 30 flatpak-builder --run flatpak-build flatpak/io.github.uunniiblog.lvnm.yml \
+            env QT_QPA_PLATFORM=offscreen python3 /app/share/lvnm/launcher.py --version
+          timeout 30 flatpak-builder --run flatpak-build flatpak/io.github.uunniiblog.lvnm.yml \
+            env QT_QPA_PLATFORM=offscreen python3 - <<'PY'
+          import sys
+          sys.path.insert(0, "/app/share/lvnm")
+          from PySide6.QtCore import QTimer
+          from PySide6.QtWidgets import QApplication
+          import launcher
+          original_window = launcher.MainWindow
+          def checked_window():
+              window = original_window()
+              assert window.sidebar.count() == 5
+              assert type(window.content_stack.widget(0)).__name__ == "GameTab"
+              def finish():
+                  assert window.isVisible()
+                  assert not window.grab().isNull()
+                  print("PASS: packaged LVNM window rendered", flush=True)
+                  window.close()
+                  QApplication.instance().quit()
+              QTimer.singleShot(500, finish)
+              return window
+          launcher.MainWindow = checked_window
+          sys.argv = ["lvnm"]
+          launcher.main()
+          PY
+
+      - name: Generate checksum
+        run: sha256sum LVNM-x86_64.flatpak > SHA256SUMS
+
       - name: Upload Flatpak artifact
         uses: actions/upload-artifact@v4
         with:
           name: flatpak
-          path: LVNM-x86_64.flatpak
+          path: |
+            LVNM-x86_64.flatpak
+            SHA256SUMS
           if-no-files-found: error

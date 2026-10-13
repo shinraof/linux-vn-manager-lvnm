@@ -66,6 +66,10 @@ finish-args:
   - --filesystem=/mnt
   - --filesystem=/run/media
   - --filesystem=xdg-run/hypr
+  # Native Discord and the Flatpak Discord desktop clients expose local RPC here.
+  - --filesystem=xdg-run/discord-ipc-0
+  - --filesystem=xdg-run/app/com.discordapp.Discord:create
+  - --filesystem=xdg-run/app/com.discordapp.DiscordCanary:create
   - --talk-name=org.kde.KWin
   - --talk-name=io.github.uunniiblog.lvnm.GnomeWindowTracker
   - --talk-name=org.freedesktop.Flatpak

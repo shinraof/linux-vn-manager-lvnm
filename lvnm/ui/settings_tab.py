@@ -25,6 +25,7 @@ from game_process_manager import GameProcessManager
 from gdrive_manager import GdriveManager, GdriveDeviceFlowWorker
 from platform_profile import CURRENT_PLATFORM, IS_WINDOWS, Feature, PlatformProfile
 from ui.platform_ui import PlatformUi
+from discord_presence import DiscordPresenceManager
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ class SettingsTab(QWidget):
         
         main_layout.addWidget(self._build_settings_group())
         main_layout.addWidget(self._build_appearance_group())
+        main_layout.addWidget(self._build_discord_group())
         main_layout.addWidget(self._build_timetracking_group())
         main_layout.addWidget(self._build_savedata_group())
         self.texthooking_group = self._build_texthooking_group()
@@ -72,6 +74,64 @@ class SettingsTab(QWidget):
 
     # ==========================================
     # Interface methods
+
+    def _build_discord_group(self):
+        group = QGroupBox(self.tr("Discord Rich Presence"))
+        layout = QFormLayout(group)
+        self.discord_enabled = QCheckBox(self.tr("Show the game I am playing on Discord"))
+        self.discord_enabled.setChecked(self.user_settings.get(config.USER_CONF_DISCORD_ENABLED, False))
+        layout.addRow(self.discord_enabled)
+        self.discord_client_id = QLineEdit(str(self.user_settings.get(config.USER_CONF_DISCORD_CLIENT_ID, "")))
+        self.discord_client_id.setPlaceholderText(self.tr("Discord Application ID"))
+        self.discord_client_id.setMaxLength(20)
+        self.discord_client_id.setEnabled(self.discord_enabled.isChecked())
+        layout.addRow(self.tr("Application ID:"), self.discord_client_id)
+        self.discord_title_mode = QComboBox()
+        self.discord_title_mode.addItem(self.tr("Library name"), "library")
+        self.discord_title_mode.addItem(self.tr("VNDB native title"), "native")
+        self.discord_title_mode.addItem(self.tr("VNDB translated title (English)"), "translated")
+        mode_index = self.discord_title_mode.findData(self.user_settings.get(config.USER_CONF_DISCORD_TITLE_MODE, "library"))
+        self.discord_title_mode.setCurrentIndex(max(0, mode_index))
+        self.discord_title_mode.setEnabled(self.discord_enabled.isChecked())
+        self.discord_title_mode.setToolTip(self.tr("Uses the game's VNDB ID. English titles fall back to VNDB's main title, then the library name."))
+        layout.addRow(self.tr("Game title:"), self.discord_title_mode)
+        self.discord_hide_explicit_covers = QCheckBox(self.tr("Hide explicit VNDB covers"))
+        self.discord_hide_explicit_covers.setChecked(self.user_settings.get(config.USER_CONF_DISCORD_HIDE_EXPLICIT_COVERS, False))
+        self.discord_hide_explicit_covers.setEnabled(self.discord_enabled.isChecked())
+        self.discord_hide_explicit_covers.setToolTip(self.tr(
+            "Hides sexually explicit VNDB covers on Discord. Safe and suggestive covers are shown. "
+            "VNDB covers with an unavailable rating are also hidden. Covers from other providers are unaffected."
+        ))
+        layout.addRow(self.discord_hide_explicit_covers)
+        help_label = QLabel(self.tr(
+            'Create an application in the <a href="https://discord.com/developers/applications">Discord Developer Portal</a> '
+            'and paste its Application ID here. Keep the Discord desktop app running. '
+            'The game name and online cover are shared while it runs. Local image files cannot be displayed.'
+        ))
+        help_label.setWordWrap(True)
+        help_label.linkActivated.connect(SystemUtils.open_url)
+        layout.addRow(help_label)
+        self.discord_id_hint = QLabel(self.tr("Enter a valid Application ID (17–20 digits) to enable presence."))
+        self.discord_id_hint.setWordWrap(True)
+        layout.addRow(self.discord_id_hint)
+        self._update_discord_id_hint()
+        return group
+
+    def _update_discord_id_hint(self):
+        client_id = self.discord_client_id.text().strip()
+        valid = client_id.isascii() and client_id.isdigit() and 17 <= len(client_id) <= 20
+        self.discord_id_hint.setVisible(self.discord_enabled.isChecked() and not valid)
+
+    def _save_discord_settings(self):
+        self.discord_client_id.setEnabled(self.discord_enabled.isChecked())
+        self.discord_title_mode.setEnabled(self.discord_enabled.isChecked())
+        self.discord_hide_explicit_covers.setEnabled(self.discord_enabled.isChecked())
+        self._update_discord_id_hint()
+        self.save_setting(config.USER_CONF_DISCORD_ENABLED, self.discord_enabled.isChecked())
+        self.save_setting(config.USER_CONF_DISCORD_CLIENT_ID, self.discord_client_id.text().strip())
+        self.save_setting(config.USER_CONF_DISCORD_TITLE_MODE, self.discord_title_mode.currentData())
+        self.save_setting(config.USER_CONF_DISCORD_HIDE_EXPLICIT_COVERS, self.discord_hide_explicit_covers.isChecked())
+        DiscordPresenceManager.get_instance().refresh()
 
     def _build_settings_group(self):
         settings_group = QGroupBox(self.tr("Settings"))
@@ -941,6 +1001,11 @@ class SettingsTab(QWidget):
     # Real Methods
 
     def _connect_signals(self):
+        self.discord_enabled.toggled.connect(self._save_discord_settings)
+        self.discord_client_id.editingFinished.connect(self._save_discord_settings)
+        self.discord_client_id.textChanged.connect(self._update_discord_id_hint)
+        self.discord_title_mode.currentIndexChanged.connect(self._save_discord_settings)
+        self.discord_hide_explicit_covers.toggled.connect(self._save_discord_settings)
         self.font_btn.clicked.connect(self.browse_font_folder)
         self.font_edit.textChanged.connect(lambda t: self.save_setting(config.USER_CONF_FONT_FOLDER, t))
         self.sgdb_key_edit.textChanged.connect(lambda text: self.save_setting(config.USER_CONF_SGDB_API_KEY, text))

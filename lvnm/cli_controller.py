@@ -13,6 +13,7 @@ from savedata_manager import SavedataManager
 from timetracker.log_manager import LogManager
 from pregame_sync_pipeline import PreLaunchSyncPipeline, SavedataSyncStep, TrackingSyncStep
 from ui.savedata_conflict_prompt import prompt_savedata_conflict
+from discord_presence import DiscordPresenceManager
 
 logger = logging.getLogger(__name__)
 
@@ -24,13 +25,16 @@ class CliController(QObject):
         self.savedata_settings = self.user_settings.get(config.USER_CONF_SAVEDATA, {})
         self.tracking = None
         self._is_exiting = False
+        self.discord_presence = DiscordPresenceManager.get_instance()
     
     def handle_args(self, args):
-        if args.run:
-            self.headless_run(args.run, args.steam)
-            
-        elif args.timetrack:
-            self.headless_timetracker(args.timetrack)
+        try:
+            if args.run:
+                self.headless_run(args.run, args.steam)
+            elif args.timetrack:
+                self.headless_timetracker(args.timetrack)
+        finally:
+            self.discord_presence.shutdown()
         
         logging.shutdown()
         sys.exit(0)
@@ -67,7 +71,10 @@ class CliController(QObject):
             signal.signal(signal.SIGINT, kill_handler)  # Ctrl+C
             signal.signal(signal.SIGTERM, kill_handler) # Standard kill / app close
 
-            runner.run(is_headless=True)
+            if not runner.run(is_headless=True):
+                logger.error("Game runner failed to start %s", game)
+                return
+            self.discord_presence.game_started(game_card)
 
             # Start tracking
             if tracking_enabled:
@@ -113,6 +120,7 @@ class CliController(QObject):
 
     def cleanup_exit(self, game, runner):
         logger.info(f"Closing {game}...")
+        self.discord_presence.game_stopped(game)
         
         # Stop tracking if active
         if hasattr(self, 'tracking') and self.tracking:
@@ -147,6 +155,7 @@ class CliController(QObject):
                 return
 
             self._is_exiting = True
+            self.discord_presence.game_stopped(game_name)
             if self.tracking:
                 self.tracking.stop_tracking()
                 
@@ -177,6 +186,7 @@ class CliController(QObject):
                 if not self.game_has_started:
                     logger.info(f"Game process '{game_card.path}' detected! Tracking initialized.")
                     self.game_has_started = True
+                    self.discord_presence.game_started(game_card)
             else:
                 if self.game_has_started:
                     logger.info("Game exited, stopping event loop.")
@@ -198,6 +208,7 @@ class CliController(QObject):
         # Normal termination path
         if not self._is_exiting:
             self._is_exiting = True
+            self.discord_presence.game_stopped(game_name)
             self.tracking.stop_tracking()
             self.update_game(game_name)
 

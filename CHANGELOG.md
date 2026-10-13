@@ -2,6 +2,13 @@
 
 Notable changes for each release are listed below, newest first.
 
+## [v0.6.2]
+- Added optional Discord Rich Presence with the current game's title, online cover, and elapsed time for GUI launches, CLI launches, and externally tracked games.
+- Added a Discord title preference for the library name, VNDB native title, or VNDB English title, with fallbacks when metadata is unavailable.
+- Added an option to hide sexually explicit VNDB covers on Discord. When enabled, unverified VNDB covers are also hidden; safe and suggestive covers remain visible.
+- Added Discord desktop IPC access to the Flatpak and bundled the required Python integration.
+- Added a Flatpak-only release workflow with feature tests, packaged application smoke checks, and SHA-256 checksums.
+
 ## [v0.6.1]
 - Added new option in settings to automatically increase the DPI temporaly when running wine utilities like regedit or winecfg in >1080p monitors for better visibility.
 

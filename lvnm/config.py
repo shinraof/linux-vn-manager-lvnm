@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 from platform_profile import IS_WINDOWS, get_data_dir
 
-VERSION = 'v0.6.0'
+VERSION = 'v0.6.2'
 GIT_URL = 'https://github.com/uunniiblog/linux-vn-manager-lvnm'
 
 # Paths
@@ -212,6 +212,10 @@ USER_CONF_PREFIXES_PATH = "prefixes_dir"
 USER_CONF_LOGS_PATH = "logs_dir"
 USER_CONF_SGDB_API_KEY = "sgdb_api_key"
 USER_CONF_NAME_AUTOCOMPLETE = "name_autocomplete"
+USER_CONF_DISCORD_ENABLED = "discord_presence_enabled"
+USER_CONF_DISCORD_CLIENT_ID = "discord_client_id"
+USER_CONF_DISCORD_TITLE_MODE = "discord_title_mode"
+USER_CONF_DISCORD_HIDE_EXPLICIT_COVERS = "discord_hide_explicit_covers"
 USER_CONF_SAVEDATA_AUTO_DETECT = "auto_detect_save"
 USER_CONF_SAVEDATA_ENABLED = "enabled"
 USER_CONF_SAVEDATA_GDRIVE_CLIENT_ID = "gdrive_client_id"

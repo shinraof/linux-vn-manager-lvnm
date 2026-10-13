@@ -10,6 +10,7 @@ from timetracker.log_manager import TrackingSyncWorker
 from timetracker.log_manager import LogManager
 from launchers.launcher_factory import create_launcher
 from launchers.launcher_base_game import LauncherBaseGame
+from discord_presence import DiscordPresenceManager
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ class GameProcessManager(QObject):
         self.runners_logs = {}
         self.active_trackers = {}
         self._active_sync_workers = {}
+        self.discord_presence = DiscordPresenceManager.get_instance()
 
         # Polling loop to check if games were closed
         self.monitor_timer = QTimer(self)
@@ -43,6 +45,7 @@ class GameProcessManager(QObject):
         self.monitor_timer.start(1000)
 
         self._exit_hooks: list[Callable[[str, LauncherBaseGame], None]] = [
+            self._clear_discord_presence,
             self._capture_final_log,
             self._run_exit_script,
             self._stop_tracking_hook,
@@ -65,6 +68,7 @@ class GameProcessManager(QObject):
             runner = create_launcher(name)
             if runner.run():
                 self.active_runners[name] = runner
+                self.discord_presence.game_started(game_card)
                 logger.debug(f"Started {name}. Total running: {len(self.active_runners)}")
 
                 # Initialize Time tracking if enabled
@@ -165,6 +169,9 @@ class GameProcessManager(QObject):
                 self.game_stopped.emit(name)
 
     ### Post exit methods
+
+    def _clear_discord_presence(self, name, runner):
+        self.discord_presence.game_stopped(name)
 
     def _capture_final_log(self, name, runner):
         self.runners_logs[name] = runner.get_full_log()

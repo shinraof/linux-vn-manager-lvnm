@@ -137,6 +137,52 @@ python /path/to/linux-vn-manager-lvnm/lvnm/launcher.py -t "game_name" & %command
 
 If you face any issues I recommend to enable "Write logging to file" and check the file to detect any errors.
 
+## Discord Rich Presence
+
+In **Settings → Discord Rich Presence**, enable **Show the game I am playing on Discord**
+and enter a Discord **Application ID**. Create an application at
+https://discord.com/developers/applications and copy the ID from its General Information
+page. The ID is public; no bot token, client secret, or Discord login credentials are needed.
+Keep the Discord desktop app running and enable activity sharing in Discord's settings.
+Presence is disabled by default.
+
+Choose **Game title → Library name**, **VNDB native title**, or **VNDB translated
+title (English)**. The VNDB options use the game's VNDB ID. Native titles use
+VNDB's original main title in its native script; translated titles prefer an
+English title and otherwise use VNDB's main display title (which may be
+romanized). When metadata is unavailable, LVNM falls back to the cached native
+title or library name. Changing this setting also updates a running game's
+presence without resetting elapsed time. VNDB metadata is fetched in the
+background and cached for the session.
+
+When a game starts, LVNM sends its selected title, elapsed time, and online cover as the
+presence image. It uses the saved SteamGridDB/VNDB cover URL, resolving a VNDB cover
+for older entries that only have a local cover. Without an online cover, it shows the
+game name without an image. Discord cannot access local image files, and LVNM does
+not upload them. If you want different artwork, select an online cover in the game's
+advanced settings. Discord may still use your application's name in some views;
+the game name is also included in the activity details.
+
+Enable **Hide explicit VNDB covers** to omit sexually explicit VNDB cover images
+from Discord while still showing the selected title and elapsed time. Safe and
+suggestive VNDB covers remain visible. This option is off by default and also
+updates running games. If a VNDB cover's rating cannot be verified (for example,
+when VNDB is offline or a different VNDB image was selected), its image stays
+hidden while filtering is enabled. SteamGridDB and other providers' images are
+unaffected because VNDB does not rate them. This setting only affects Discord;
+it does not hide covers in LVNM's library.
+
+This works for GUI launches, `--run`, and games detected by `--timetrack`. The most
+recently started game is displayed when several are running. Presence clears when
+the game exits, the feature is disabled, or LVNM closes; if another game is still
+running, its presence is restored. Updates can take up to 15 seconds. A missing or
+restarted Discord client does not prevent launching games; LVNM retries in the
+background. The browser version of Discord does not provide desktop RPC.
+
+Flatpak builds allow the standard native and Flatpak Discord IPC locations. Other
+sandboxed Discord installations may need access to their IPC socket. The Application
+ID must refer to a real Discord application; connection errors are recorded in LVNM's log.
+
 ## Timetracking
 Can be enabled in settings.
 
@@ -233,6 +279,11 @@ Tools used and inspiration:
 - source venv/bin/activate
 - pip install -r requirements.txt
 - python lvnm/launcher.py
+```
+
+Discord presence tests (including a local IPC server, without a Discord account):
+```bash
+QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -v
 ```
 
 Flatpak build local testing:
