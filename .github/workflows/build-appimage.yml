@@ -2,6 +2,11 @@ name: Build LVNM AppImage
 
 on:
   workflow_call:
+    inputs:
+      source_ref:
+        description: Source commit to package
+        required: false
+        type: string
   workflow_dispatch:
 
 permissions:
@@ -16,6 +21,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.source_ref || github.sha }}
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
@@ -77,14 +83,10 @@ jobs:
           rm -f LVNM.AppDir/usr/bin/_internal/libssl.so.3
           rm -f LVNM.AppDir/usr/bin/_internal/libzstd.so*
 
-      - name: Bundle umu-run (Latest Stable Zipapp)
+      - name: Bundle umu-run 1.4.4
         run: |
-          # Query GitHub API for the latest non-prerelease
-          DOWNLOAD_URL=$(curl -s https://api.github.com/repos/Open-Wine-Components/umu-launcher/releases | \
-            jq -r '[.[] | select(.prerelease == false)][0].assets[] | select(.name | contains("zipapp.tar")) | .browser_download_url')
-          
-          echo "Downloading umu-run from: $DOWNLOAD_URL"
-          curl -fL -o umu-zipapp.tar "$DOWNLOAD_URL"
+          curl -fL -o umu-zipapp.tar https://github.com/Open-Wine-Components/umu-launcher/releases/download/1.4.4/umu-launcher-1.4.4-zipapp.tar
+          echo 'eb590691841f7fad3fc3ad8fd5db4ccb87849fe7948e62b28ece7a4ee48cc851  umu-zipapp.tar' | sha256sum --check
           
           tar -xf umu-zipapp.tar
           cp umu/umu-run LVNM.AppDir/usr/bin/tools/umu-run
@@ -92,7 +94,7 @@ jobs:
 
       - name: Bundle Winetricks
         run: |
-          curl -L -o LVNM.AppDir/usr/bin/tools/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks
+          curl -fL -o LVNM.AppDir/usr/bin/tools/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/20260125/src/winetricks
 
           sudo apt-get update && sudo apt-get install -y cabextract
           cp $(which cabextract) LVNM.AppDir/usr/bin/tools/
@@ -129,6 +131,7 @@ jobs:
       - name: Generate AppImage
         run: |
           curl -fLo appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          echo '95cbe7cce9717fce90c484e34052ee7c7f1d7635b33c12525b4776826a7d29b6  appimagetool' | sha256sum --check
           chmod +x appimagetool          
           ./appimagetool --appimage-extract-and-run LVNM.AppDir/ LVNM-x86_64.AppImage
 

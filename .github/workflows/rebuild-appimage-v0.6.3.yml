@@ -1,0 +1,74 @@
+name: Rebuild v0.6.3 AppImage
+
+on:
+  push:
+    branches: [codex/rebuild-v0.6.3-appimage]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-appimage.yml
+    with:
+      source_ref: 8e6eca33315f9aacf88d22887b3c264e010af3ab
+
+  validate:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: appimage
+      - name: Install GUI validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xdotool libxcb-icccm4 libxcb-keysyms1 libxcb-util1 libxcb-cursor0 libxcb-image0 libxkbcommon-x11-0 libxcb-xkb1
+      - name: Check packaged version and visible window
+        run: |
+          chmod +x LVNM-x86_64.AppImage
+          QT_QPA_PLATFORM=offscreen timeout 30 ./LVNM-x86_64.AppImage --appimage-extract-and-run --version | tee version.txt
+          test "$(cat version.txt)" = 'lvnm v0.6.3'
+          xvfb-run -a python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import subprocess
+          import tempfile
+          import time
+
+          with tempfile.TemporaryDirectory() as test_temp:
+              env = os.environ.copy()
+              env['TMPDIR'] = test_temp
+              with open('appimage-startup.log', 'w') as log:
+                  process = subprocess.Popen(['./LVNM-x86_64.AppImage', '--appimage-extract-and-run'], env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+                  try:
+                      deadline = time.monotonic() + 30
+                      while time.monotonic() < deadline:
+                          if process.poll() is not None:
+                              raise RuntimeError(f'AppImage exited with {process.returncode}: ' + Path('appimage-startup.log').read_text())
+                          windows = subprocess.run(['xdotool', 'search', '--onlyvisible', '--name', '^LVNM - v0[.]6[.]3$'], capture_output=True, text=True)
+                          if windows.returncode == 0 and windows.stdout.strip():
+                              time.sleep(1)
+                              assert process.poll() is None
+                              print('PASS: packaged LVNM v0.6.3 window is visible and remains running')
+                              break
+                          time.sleep(.25)
+                      else:
+                          raise RuntimeError('LVNM window did not appear: ' + Path('appimage-startup.log').read_text())
+                  finally:
+                      import signal
+                      try:
+                          os.killpg(process.pid, signal.SIGTERM)
+                      except ProcessLookupError:
+                          pass
+                      process.wait(timeout=10)
+          PY
+          sha256sum LVNM-x86_64.AppImage > SHA256SUMS-AppImage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage-verified
+          path: |
+            LVNM-x86_64.AppImage
+            SHA256SUMS-AppImage
+            appimage-startup.log
